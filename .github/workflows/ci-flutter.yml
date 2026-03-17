@@ -1,8 +1,8 @@
-name: CI
+name: CI (Flutter)
 
 on:
   repository_dispatch:
-    types: [ci]
+    types: [ci-flutter]
 
 concurrency:
   group: ci-${{ github.event.client_payload.source_repo }}-${{ github.event.client_payload.pr_number }}
@@ -15,8 +15,7 @@ jobs:
   init:
     runs-on: ubuntu-latest
     outputs:
-      go_version: ${{ steps.env.outputs.GO_VERSION }}
-      needs_docker: ${{ steps.env.outputs.NEEDS_DOCKER }}
+      flutter_version: ${{ steps.env.outputs.FLUTTER_VERSION }}
       needs_submodules: ${{ steps.env.outputs.NEEDS_SUBMODULES }}
     steps:
       - name: Checkout source
@@ -26,7 +25,6 @@ jobs:
           ref: ${{ github.event.client_payload.sha }}
           token: ${{ secrets.SOURCE_REPO_PAT }}
           submodules: true
-          fetch-depth: 0
 
       - name: Read CI env
         id: env
@@ -43,7 +41,7 @@ jobs:
           script: |
             const payload = context.payload.client_payload;
             const [owner, repo] = payload.source_repo.split('/');
-            const checks = ['lint', 'unit-test', 'integration-test', 'sonarqube'];
+            const checks = ['lint', 'unit-test', 'sonarqube'];
             for (const name of checks) {
               await github.rest.repos.createCommitStatus({
                 owner, repo,
@@ -55,7 +53,7 @@ jobs:
             }
 
   # ═══════════════════════════════════════════════════
-  # Lint / Unit Test / Integration Test — 全部并发
+  # Lint / Unit Test — 并发
   # ═══════════════════════════════════════════════════
   lint:
     needs: [init]
@@ -67,12 +65,10 @@ jobs:
           ref: ${{ github.event.client_payload.sha }}
           token: ${{ secrets.SOURCE_REPO_PAT }}
           submodules: ${{ needs.init.outputs.needs_submodules == 'true' }}
-          fetch-depth: 0
 
-      - uses: actions/setup-go@v5
-        if: needs.init.outputs.go_version != ''
+      - uses: subosito/flutter-action@v2
         with:
-          go-version: ${{ needs.init.outputs.go_version }}
+          flutter-version: ${{ needs.init.outputs.flutter_version }}
 
       - name: Setup
         run: make ci-setup || true
@@ -112,10 +108,9 @@ jobs:
           token: ${{ secrets.SOURCE_REPO_PAT }}
           submodules: ${{ needs.init.outputs.needs_submodules == 'true' }}
 
-      - uses: actions/setup-go@v5
-        if: needs.init.outputs.go_version != ''
+      - uses: subosito/flutter-action@v2
         with:
-          go-version: ${{ needs.init.outputs.go_version }}
+          flutter-version: ${{ needs.init.outputs.flutter_version }}
 
       - name: Setup
         run: make ci-setup || true
@@ -149,66 +144,11 @@ jobs:
               target_url: '${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}'
             });
 
-  integration-test:
-    needs: [init]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          repository: ${{ github.event.client_payload.source_repo }}
-          ref: ${{ github.event.client_payload.sha }}
-          token: ${{ secrets.SOURCE_REPO_PAT }}
-          submodules: true
-
-      - uses: actions/setup-go@v5
-        if: needs.init.outputs.go_version != ''
-        with:
-          go-version: ${{ needs.init.outputs.go_version }}
-
-      - name: Docker Login
-        if: needs.init.outputs.needs_docker == 'true'
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ secrets.DOCKER_REGISTRY }}
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
-
-      - name: Integration Tests
-        env:
-          BUILD_ID: ${{ github.run_id }}
-        run: make ci-integration-test BUILD_ID="$BUILD_ID"
-
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: coverage-integration
-          path: coverage/
-          retention-days: 3
-
-      - name: Report
-        if: always()
-        continue-on-error: true
-        uses: actions/github-script@v7
-        with:
-          github-token: ${{ secrets.SOURCE_REPO_PAT }}
-          script: |
-            const p = context.payload.client_payload;
-            const [owner, repo] = p.source_repo.split('/');
-            const state = '${{ job.status }}' === 'success' ? 'success' : 'failure';
-            await github.rest.repos.createCommitStatus({
-              owner, repo,
-              sha: p.sha,
-              state,
-              context: 'CI / integration-test',
-              description: 'Integration Test ${{ job.status }}',
-              target_url: '${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}'
-            });
-
   # ═══════════════════════════════════════════════════
-  # SonarQube — 等所有并发任务完成后运行
+  # SonarQube
   # ═══════════════════════════════════════════════════
   sonarqube:
-    needs: [lint, unit-test, integration-test]
+    needs: [lint, unit-test]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -223,28 +163,6 @@ jobs:
         with:
           path: coverage/
 
-      - name: Merge coverage
-        run: |
-          shopt -s nullglob
-          out_files=(coverage/**/*.out)
-          shopt -u nullglob
-          if [[ ${#out_files[@]} -eq 0 ]]; then
-            echo "mode: set" > coverage/final.out
-            exit 0
-          fi
-          first_file=""
-          for f in "${out_files[@]}"; do
-            [[ "$f" != *"final.out" ]] && first_file="$f" && break
-          done
-          if [[ -n "$first_file" ]]; then
-            head -1 "$first_file" > coverage/final.out
-            for f in "${out_files[@]}"; do
-              [[ "$f" != *"final.out" ]] && tail -n +2 "$f" >> coverage/final.out
-            done
-          else
-            echo "mode: set" > coverage/final.out
-          fi
-
       - name: SonarQube Scan
         uses: SonarSource/sonarqube-scan-action@v4
         env:
@@ -254,7 +172,6 @@ jobs:
         with:
           args: >
             -Dproject.settings=sonar-project.properties
-            -Dsonar.go.coverage.reportPaths=coverage/final.out
             -Dsonar.scm.revision=${{ github.event.client_payload.sha }}
             -Dsonar.pullrequest.key=${{ github.event.client_payload.pr_number }}
             -Dsonar.pullrequest.branch=${{ github.event.client_payload.head_ref }}

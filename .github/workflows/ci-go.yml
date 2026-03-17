@@ -1,0 +1,280 @@
+name: CI (Go)
+
+on:
+  repository_dispatch:
+    types: [ci-go]
+
+concurrency:
+  group: ci-${{ github.event.client_payload.source_repo }}-${{ github.event.client_payload.pr_number }}
+  cancel-in-progress: true
+
+jobs:
+  # ═══════════════════════════════════════════════════
+  # 初始化：读取源码仓库的 CI 配置
+  # ═══════════════════════════════════════════════════
+  init:
+    runs-on: ubuntu-latest
+    outputs:
+      go_version: ${{ steps.env.outputs.GO_VERSION }}
+      needs_docker: ${{ steps.env.outputs.NEEDS_DOCKER }}
+      needs_submodules: ${{ steps.env.outputs.NEEDS_SUBMODULES }}
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.client_payload.source_repo }}
+          ref: ${{ github.event.client_payload.sha }}
+          token: ${{ secrets.SOURCE_REPO_PAT }}
+          submodules: true
+          fetch-depth: 0
+
+      - name: Read CI env
+        id: env
+        run: |
+          if make ci-env > /dev/null 2>&1; then
+            make ci-env >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create pending statuses
+        continue-on-error: true
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.SOURCE_REPO_PAT }}
+          script: |
+            const payload = context.payload.client_payload;
+            const [owner, repo] = payload.source_repo.split('/');
+            const checks = ['lint', 'unit-test', 'integration-test', 'sonarqube'];
+            for (const name of checks) {
+              await github.rest.repos.createCommitStatus({
+                owner, repo,
+                sha: payload.sha,
+                state: 'pending',
+                context: `CI / ${name}`,
+                target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`
+              });
+            }
+
+  # ═══════════════════════════════════════════════════
+  # Lint / Unit Test / Integration Test — 全部并发
+  # ═══════════════════════════════════════════════════
+  lint:
+    needs: [init]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.client_payload.source_repo }}
+          ref: ${{ github.event.client_payload.sha }}
+          token: ${{ secrets.SOURCE_REPO_PAT }}
+          submodules: ${{ needs.init.outputs.needs_submodules == 'true' }}
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ needs.init.outputs.go_version }}
+          cache-dependency-path: '**/go.sum'
+
+      - name: Setup
+        run: make ci-setup || true
+
+      - name: Lint
+        env:
+          BASE_REF: ${{ github.event.client_payload.base_ref }}
+        run: make ci-lint BASE_REF="$BASE_REF"
+
+      - name: Report
+        if: always()
+        continue-on-error: true
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.SOURCE_REPO_PAT }}
+          script: |
+            const p = context.payload.client_payload;
+            const [owner, repo] = p.source_repo.split('/');
+            const state = '${{ job.status }}' === 'success' ? 'success' : 'failure';
+            await github.rest.repos.createCommitStatus({
+              owner, repo,
+              sha: p.sha,
+              state,
+              context: 'CI / lint',
+              description: 'Lint ${{ job.status }}',
+              target_url: '${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}'
+            });
+
+  unit-test:
+    needs: [init]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.client_payload.source_repo }}
+          ref: ${{ github.event.client_payload.sha }}
+          token: ${{ secrets.SOURCE_REPO_PAT }}
+          submodules: ${{ needs.init.outputs.needs_submodules == 'true' }}
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ needs.init.outputs.go_version }}
+          cache-dependency-path: '**/go.sum'
+
+      - name: Setup
+        run: make ci-setup || true
+
+      - name: Unit Tests
+        run: make ci-unit-test
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-unit
+          path: coverage/
+          retention-days: 3
+
+      - name: Report
+        if: always()
+        continue-on-error: true
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.SOURCE_REPO_PAT }}
+          script: |
+            const p = context.payload.client_payload;
+            const [owner, repo] = p.source_repo.split('/');
+            const state = '${{ job.status }}' === 'success' ? 'success' : 'failure';
+            await github.rest.repos.createCommitStatus({
+              owner, repo,
+              sha: p.sha,
+              state,
+              context: 'CI / unit-test',
+              description: 'Unit Test ${{ job.status }}',
+              target_url: '${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}'
+            });
+
+  integration-test:
+    needs: [init]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.client_payload.source_repo }}
+          ref: ${{ github.event.client_payload.sha }}
+          token: ${{ secrets.SOURCE_REPO_PAT }}
+          submodules: true
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ needs.init.outputs.go_version }}
+          cache-dependency-path: '**/go.sum'
+
+      - name: Docker Login
+        if: needs.init.outputs.needs_docker == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ secrets.DOCKER_REGISTRY }}
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Integration Tests
+        env:
+          BUILD_ID: ${{ github.run_id }}
+        run: make ci-integration-test BUILD_ID="$BUILD_ID"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-integration
+          path: coverage/
+          retention-days: 3
+
+      - name: Report
+        if: always()
+        continue-on-error: true
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.SOURCE_REPO_PAT }}
+          script: |
+            const p = context.payload.client_payload;
+            const [owner, repo] = p.source_repo.split('/');
+            const state = '${{ job.status }}' === 'success' ? 'success' : 'failure';
+            await github.rest.repos.createCommitStatus({
+              owner, repo,
+              sha: p.sha,
+              state,
+              context: 'CI / integration-test',
+              description: 'Integration Test ${{ job.status }}',
+              target_url: '${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}'
+            });
+
+  # ═══════════════════════════════════════════════════
+  # SonarQube — 等所有并发任务完成后运行
+  # ═══════════════════════════════════════════════════
+  sonarqube:
+    needs: [lint, unit-test, integration-test]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.client_payload.source_repo }}
+          ref: ${{ github.event.client_payload.sha }}
+          token: ${{ secrets.SOURCE_REPO_PAT }}
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: coverage/
+
+      - name: Merge coverage
+        run: |
+          shopt -s nullglob
+          out_files=(coverage/**/*.out)
+          shopt -u nullglob
+          if [[ ${#out_files[@]} -eq 0 ]]; then
+            echo "mode: set" > coverage/final.out
+            exit 0
+          fi
+          first_file=""
+          for f in "${out_files[@]}"; do
+            [[ "$f" != *"final.out" ]] && first_file="$f" && break
+          done
+          if [[ -n "$first_file" ]]; then
+            head -1 "$first_file" > coverage/final.out
+            for f in "${out_files[@]}"; do
+              [[ "$f" != *"final.out" ]] && tail -n +2 "$f" >> coverage/final.out
+            done
+          else
+            echo "mode: set" > coverage/final.out
+          fi
+
+      - name: SonarQube Scan
+        uses: SonarSource/sonarqube-scan-action@v4
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+          NODE_TLS_REJECT_UNAUTHORIZED: '0'
+        with:
+          args: >
+            -Dproject.settings=sonar-project.properties
+            -Dsonar.go.coverage.reportPaths=coverage/final.out
+            -Dsonar.scm.revision=${{ github.event.client_payload.sha }}
+            -Dsonar.pullrequest.key=${{ github.event.client_payload.pr_number }}
+            -Dsonar.pullrequest.branch=${{ github.event.client_payload.head_ref }}
+            -Dsonar.pullrequest.base=${{ github.event.client_payload.base_ref }}
+
+      - name: Report
+        if: always()
+        continue-on-error: true
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.SOURCE_REPO_PAT }}
+          script: |
+            const p = context.payload.client_payload;
+            const [owner, repo] = p.source_repo.split('/');
+            const state = '${{ job.status }}' === 'success' ? 'success' : 'failure';
+            await github.rest.repos.createCommitStatus({
+              owner, repo,
+              sha: p.sha,
+              state,
+              context: 'CI / sonarqube',
+              description: 'SonarQube ${{ job.status }}',
+              target_url: '${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}'
+            });
