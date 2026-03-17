@@ -80,7 +80,7 @@ jobs:
       - name: Lint
         env:
           BASE_REF: ${{ github.event.client_payload.base_ref }}
-        run: make ci-lint BASE_REF="$BASE_REF"
+        run: make ci-lint
 
       - name: Report
         if: always()
