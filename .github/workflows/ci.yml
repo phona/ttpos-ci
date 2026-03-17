@@ -35,7 +35,7 @@ jobs:
             make ci-env >> $GITHUB_OUTPUT
           fi
 
-      - name: Create pending checks
+      - name: Create pending statuses
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.SOURCE_REPO_PAT }}
@@ -44,12 +44,12 @@ jobs:
             const [owner, repo] = payload.source_repo.split('/');
             const checks = ['lint', 'unit-test', 'integration-test', 'sonarqube'];
             for (const name of checks) {
-              await github.rest.checks.create({
+              await github.rest.repos.createCommitStatus({
                 owner, repo,
-                head_sha: payload.sha,
-                name: `CI / ${name}`,
-                status: 'in_progress',
-                details_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`
+                sha: payload.sha,
+                state: 'pending',
+                context: `CI / ${name}`,
+                target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`
               });
             }
 
@@ -89,15 +89,14 @@ jobs:
           script: |
             const p = context.payload.client_payload;
             const [owner, repo] = p.source_repo.split('/');
-            await github.rest.checks.create({
-              owner, repo, head_sha: p.sha,
-              name: 'CI / lint',
-              status: 'completed',
-              conclusion: '${{ job.status }}',
-              output: {
-                title: 'Lint ${{ job.status }}',
-                summary: '[查看日志](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})'
-              }
+            const state = '${{ job.status }}' === 'success' ? 'success' : 'failure';
+            await github.rest.repos.createCommitStatus({
+              owner, repo,
+              sha: p.sha,
+              state,
+              context: 'CI / lint',
+              description: 'Lint ${{ job.status }}',
+              target_url: '${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}'
             });
 
   unit-test:
@@ -137,15 +136,14 @@ jobs:
           script: |
             const p = context.payload.client_payload;
             const [owner, repo] = p.source_repo.split('/');
-            await github.rest.checks.create({
-              owner, repo, head_sha: p.sha,
-              name: 'CI / unit-test',
-              status: 'completed',
-              conclusion: '${{ job.status }}',
-              output: {
-                title: 'Unit Test ${{ job.status }}',
-                summary: '[查看日志](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})'
-              }
+            const state = '${{ job.status }}' === 'success' ? 'success' : 'failure';
+            await github.rest.repos.createCommitStatus({
+              owner, repo,
+              sha: p.sha,
+              state,
+              context: 'CI / unit-test',
+              description: 'Unit Test ${{ job.status }}',
+              target_url: '${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}'
             });
 
   integration-test:
@@ -192,15 +190,14 @@ jobs:
           script: |
             const p = context.payload.client_payload;
             const [owner, repo] = p.source_repo.split('/');
-            await github.rest.checks.create({
-              owner, repo, head_sha: p.sha,
-              name: 'CI / integration-test',
-              status: 'completed',
-              conclusion: '${{ job.status }}',
-              output: {
-                title: 'Integration Test ${{ job.status }}',
-                summary: '[查看日志](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})'
-              }
+            const state = '${{ job.status }}' === 'success' ? 'success' : 'failure';
+            await github.rest.repos.createCommitStatus({
+              owner, repo,
+              sha: p.sha,
+              state,
+              context: 'CI / integration-test',
+              description: 'Integration Test ${{ job.status }}',
+              target_url: '${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}'
             });
 
   # ═══════════════════════════════════════════════════
@@ -267,13 +264,12 @@ jobs:
           script: |
             const p = context.payload.client_payload;
             const [owner, repo] = p.source_repo.split('/');
-            await github.rest.checks.create({
-              owner, repo, head_sha: p.sha,
-              name: 'CI / sonarqube',
-              status: 'completed',
-              conclusion: '${{ job.status }}',
-              output: {
-                title: 'SonarQube ${{ job.status }}',
-                summary: '[查看日志](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})'
-              }
+            const state = '${{ job.status }}' === 'success' ? 'success' : 'failure';
+            await github.rest.repos.createCommitStatus({
+              owner, repo,
+              sha: p.sha,
+              state,
+              context: 'CI / sonarqube',
+              description: 'SonarQube ${{ job.status }}',
+              target_url: '${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}'
             });
