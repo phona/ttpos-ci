@@ -80,7 +80,7 @@ jobs:
       - name: Fetch base ref
         env:
           BASE_REF: ${{ github.event.client_payload.base_ref }}
-        run: git fetch origin "$BASE_REF"
+        run: git fetch origin "$BASE_REF":"refs/remotes/origin/$BASE_REF"
 
       - name: Lint
         env:
