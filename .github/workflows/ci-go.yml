@@ -77,6 +77,11 @@ jobs:
       - name: Setup
         run: make ci-setup || true
 
+      - name: Fetch base ref
+        env:
+          BASE_REF: ${{ github.event.client_payload.base_ref }}
+        run: git fetch origin "$BASE_REF"
+
       - name: Lint
         env:
           BASE_REF: ${{ github.event.client_payload.base_ref }}
