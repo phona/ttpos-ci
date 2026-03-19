@@ -63,12 +63,24 @@ ci-env:
 
 ### 环境变量传递
 
-构建仓库通过 PR API 计算以下值，以环境变量形式传给业务仓库的 make targets：
+构建仓库在 init 阶段计算以下值，以环境变量形式传给业务仓库的 make targets：
 
 | 变量 | 来源 | 说明 |
 |------|------|------|
-| `BASE_REV` | GitHub Compare API (merge-base SHA) | 增量扫描基准，仅 PR 时设置 |
+| `BASE_REV` | `git merge-base` (PR 基线与 HEAD 的公共祖先 SHA) | 增量扫描基准，仅 PR 时设置；未设置时业务仓库应全量扫描 |
 | `BUILD_ID` | `github.run_id` | 隔离并发运行的集成测试环境 |
+
+业务仓库的 make target 应通过 `$BASE_REV` 环境变量读取，不应假设 git 远程分支可用：
+
+```makefile
+# 正确：读环境变量，有则增量，无则全量
+ci-lint:
+	cd main && golangci-lint run $${BASE_REV:+--new-from-rev=$$BASE_REV}
+
+# 错误：依赖 git 上下文
+ci-lint:
+	cd main && golangci-lint run --new-from-rev=origin/dev
+```
 
 ## Dispatch Payload 规范
 

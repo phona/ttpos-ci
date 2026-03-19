@@ -27,6 +27,7 @@ jobs:
           ref: ${{ github.event.client_payload.sha }}
           token: ${{ secrets.SOURCE_REPO_PAT }}
           submodules: true
+          fetch-depth: 0
 
       - name: Read CI env
         id: env
@@ -35,17 +36,14 @@ jobs:
             make ci-env >> $GITHUB_OUTPUT
           fi
 
-      - name: Get PR merge base
+      - name: Compute merge base
         id: base
         if: github.event.client_payload.pr_number != ''
         env:
-          GH_TOKEN: ${{ secrets.SOURCE_REPO_PAT }}
-          SOURCE_REPO: ${{ github.event.client_payload.source_repo }}
-          PR_NUMBER: ${{ github.event.client_payload.pr_number }}
-          SHA: ${{ github.event.client_payload.sha }}
+          BASE_REF: ${{ github.event.client_payload.base_ref }}
         run: |
-          BASE_REF=$(gh api "repos/$SOURCE_REPO/pulls/$PR_NUMBER" --jq '.base.ref')
-          echo "BASE_REV=$(gh api "repos/$SOURCE_REPO/compare/$BASE_REF...$SHA" --jq '.merge_base_commit.sha')" >> $GITHUB_OUTPUT
+          git fetch origin "$BASE_REF"
+          echo "BASE_REV=$(git merge-base FETCH_HEAD HEAD)" >> $GITHUB_OUTPUT
 
       - name: Create pending statuses
         continue-on-error: true
