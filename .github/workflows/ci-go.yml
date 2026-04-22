@@ -53,7 +53,7 @@ jobs:
           script: |
             const payload = context.payload.client_payload;
             const [owner, repo] = payload.source_repo.split('/');
-            const checks = ['lint', 'unit-test', 'integration-test', 'sonarqube'];
+            const checks = ['lint', 'unit-test', 'integration-test', 'sonarqube', 'image-publish'];
             for (const name of checks) {
               await github.rest.repos.createCommitStatus({
                 owner, repo,
@@ -286,5 +286,82 @@ jobs:
               state,
               context: 'CI / sonarqube',
               description: 'SonarQube ${{ job.status }}',
+              target_url: '${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}'
+            });
+
+  # ═══════════════════════════════════════════════════
+  # Image Publish — 所有 quality gate 全绿后才跑
+  #   build image + push 到 ghcr.io；tag 写回 commit status description 给 sisyphus 读
+  # ═══════════════════════════════════════════════════
+  image-publish:
+    needs: [lint, unit-test, integration-test, sonarqube]
+    runs-on: ubuntu-latest
+    # 只有前面 4 个 job 全 success 才跑；任一失败 image-publish skip
+    if: |
+      needs.lint.result == 'success' &&
+      needs.unit-test.result == 'success' &&
+      needs.integration-test.result == 'success' &&
+      needs.sonarqube.result == 'success'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.client_payload.source_repo }}
+          ref: ${{ github.event.client_payload.sha }}
+          token: ${{ secrets.SOURCE_REPO_PAT }}
+          submodules: ${{ needs.init.outputs.needs_submodules == 'true' }}
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ needs.init.outputs.go_version }}
+          cache-dependency-path: '**/go.sum'
+
+      - name: Compute image tag
+        id: tag
+        env:
+          SOURCE_REPO: ${{ github.event.client_payload.source_repo }}
+          SHA: ${{ github.event.client_payload.sha }}
+          HEAD_REF: ${{ github.event.client_payload.head_ref }}
+        run: |
+          SHORT_SHA="${SHA:0:8}"
+          # 从 branch 名抽 REQ-N（约定：stage/REQ-<id>-dev）
+          REQ_ID=$(echo "$HEAD_REF" | grep -oE 'REQ-[0-9A-Za-z_-]+' | head -1 || true)
+          if [ -z "$REQ_ID" ]; then REQ_ID="nonreq-${SHA:0:8}"; fi
+          IMAGE_TAG="ghcr.io/${SOURCE_REPO,,}:${REQ_ID}-sha-${SHORT_SHA}"
+          echo "image_tag=$IMAGE_TAG" >> $GITHUB_OUTPUT
+          echo "req_id=$REQ_ID" >> $GITHUB_OUTPUT
+
+      - name: GHCR login
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.SOURCE_REPO_PAT }}
+
+      - name: Build + push image
+        env:
+          SISYPHUS_IMAGE_TAG: ${{ steps.tag.outputs.image_tag }}
+          BUILD_ID: ${{ github.run_id }}
+        run: make ci-build
+
+      - name: Report
+        if: always()
+        continue-on-error: true
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.SOURCE_REPO_PAT }}
+          script: |
+            const p = context.payload.client_payload;
+            const [owner, repo] = p.source_repo.split('/');
+            const state = '${{ job.status }}' === 'success' ? 'success' : 'failure';
+            // description 里放 image_tag 给 sisyphus pr-ci-watch agent 直接解析
+            const desc = state === 'success'
+              ? '${{ steps.tag.outputs.image_tag }}'
+              : 'Image publish ${{ job.status }}';
+            await github.rest.repos.createCommitStatus({
+              owner, repo,
+              sha: p.sha,
+              state,
+              context: 'CI / image-publish',
+              description: desc,
               target_url: '${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}'
             });
