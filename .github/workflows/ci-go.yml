@@ -369,4 +369,4 @@ jobs:
             --repo ${{ github.repository }} \
             -f source_repo="${{ github.event.client_payload.source_repo }}" \
             -f sha="${{ github.event.client_payload.sha }}" \
-            -f ref_name="${{ github.event.client_payload.ref_name }}"
+            -f ref_name="${{ github.event.client_payload.head_ref || github.event.client_payload.ref_name }}"

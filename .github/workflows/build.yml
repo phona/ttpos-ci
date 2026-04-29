@@ -14,7 +14,7 @@ on:
       ref_name:
         description: 'Ref name (branch or tag)'
         required: true
-        default: 'release'
+        default: 'main'
 
 jobs:
   build:
