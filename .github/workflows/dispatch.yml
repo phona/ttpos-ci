@@ -44,7 +44,7 @@ jobs:
             echo "::warning::BACKEND_ENDPOINT not in event payload, falling back to http://localhost:8080"
             BACKEND_ENDPOINT="http://localhost:8080"
           fi
-          flutter build apk --dart-define=BASE_URL="$BACKEND_ENDPOINT"
+          flutter build apk --dart-define=API_BASE_URL="$BACKEND_ENDPOINT"
 
       - uses: actions/upload-artifact@v4
         with:
