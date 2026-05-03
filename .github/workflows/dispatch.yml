@@ -1,0 +1,53 @@
+name: Dispatch (Flutter APK)
+
+on:
+  repository_dispatch:
+    types: [dispatch-flutter]
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.client_payload.source_repo }}
+          ref: ${{ github.event.client_payload.sha }}
+          token: ${{ secrets.SOURCE_REPO_PAT }}
+          submodules: true
+
+      - name: Read CI env
+        id: env
+        run: |
+          if make ci-env > /dev/null 2>&1; then
+            make ci-env >> $GITHUB_OUTPUT
+          fi
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ steps.env.outputs.FLUTTER_VERSION }}
+
+      - name: Symlink .fvm/flutter_sdk → $FLUTTER_ROOT
+        # 业务仓 pubspec.yaml 假设 SDK 在 .fvm/flutter_sdk（fvm 约定），CI 用 subosito/flutter-action 装到 $FLUTTER_ROOT
+        run: |
+          mkdir -p .fvm
+          ln -sfn "$FLUTTER_ROOT" .fvm/flutter_sdk
+
+      - name: Setup
+        run: make ci-setup || true
+
+      - name: Build APK
+        env:
+          BACKEND_ENDPOINT: ${{ github.event.client_payload.BACKEND_ENDPOINT }}
+        run: |
+          if [ -z "$BACKEND_ENDPOINT" ]; then
+            echo "::warning::BACKEND_ENDPOINT not in event payload, falling back to http://localhost:8080"
+            BACKEND_ENDPOINT="http://localhost:8080"
+          fi
+          flutter build apk --dart-define=BASE_URL="$BACKEND_ENDPOINT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: app-release
+          path: build/app/outputs/flutter-apk/app-release.apk
+          retention-days: 7
