@@ -41,7 +41,7 @@ jobs:
           script: |
             const payload = context.payload.client_payload;
             const [owner, repo] = payload.source_repo.split('/');
-            const checks = ['lint', 'unit-test', 'sonarqube'];
+            const checks = ['lint', 'unit-test'];  // sonarqube temp disabled — vm-node04 OOM (sisyphus#433)
             for (const name of checks) {
               await github.rest.repos.createCommitStatus({
                 owner, repo,
@@ -163,7 +163,7 @@ jobs:
   # ═══════════════════════════════════════════════════
   sonarqube:
     needs: [lint, unit-test]
-    if: always()
+    if: false  # temp disabled — sonar backend on vm-node04 OOM 拖死 cluster (phona/sisyphus#433). 等 sonar 搬到独立机再恢复
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
