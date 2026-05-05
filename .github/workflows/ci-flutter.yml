@@ -130,7 +130,9 @@ jobs:
         run: make ci-setup || true
 
       - name: Unit Tests
-        run: make ci-unit-test
+        env:
+          BASE_REF: ${{ github.event.client_payload.base_ref }}
+        run: make ci-unit-test BASE_REF="$BASE_REF"
 
       - uses: actions/upload-artifact@v4
         if: always()
