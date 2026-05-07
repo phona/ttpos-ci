@@ -3,9 +3,33 @@ name: CI (Go)
 on:
   repository_dispatch:
     types: [ci-go]
+  workflow_dispatch:
+    inputs:
+      source_repo:
+        description: 'Source repo (owner/repo)'
+        required: true
+        default: 'zoneasetech/ttpos-server-go'
+      sha:
+        description: 'Commit SHA or branch to checkout'
+        required: true
+        default: 'main'
+      head_ref:
+        description: 'Head branch name (for image tag)'
+        required: true
+        default: 'main'
+      base_ref:
+        description: 'Base branch (for merge-base comparison)'
+        required: true
+        default: 'main'
+      pr_number:
+        description: 'PR number (optional, for status reporting)'
+        required: false
+      ref_name:
+        description: 'Ref name (optional, defaults to head_ref)'
+        required: false
 
 concurrency:
-  group: ci-${{ github.event.client_payload.source_repo }}-${{ github.event.client_payload.pr_number }}
+  group: ci-${{ github.event.client_payload.source_repo || github.event.inputs.source_repo }}-${{ github.event.client_payload.pr_number || github.event.inputs.pr_number }}
   cancel-in-progress: true
 
 jobs:
@@ -364,9 +388,18 @@ jobs:
       - name: Trigger build workflow
         env:
           GH_TOKEN: ${{ github.token }}
+          SOURCE_REPO: ${{ github.event.client_payload.source_repo }}
+          SHA: ${{ github.event.client_payload.sha }}
+          REF_NAME: ${{ github.event.client_payload.head_ref || github.event.client_payload.ref_name }}
+          ACTOR: ${{ github.event.client_payload.actor }}
+          IMAGES: ${{ toJSON(github.event.client_payload.images) }}
         run: |
-          gh workflow run build.yml \
-            --repo ${{ github.repository }} \
-            -f source_repo="${{ github.event.client_payload.source_repo }}" \
-            -f sha="${{ github.event.client_payload.sha }}" \
-            -f ref_name="${{ github.event.client_payload.head_ref || github.event.client_payload.ref_name }}"
+          jq -n \
+            --arg event_type "build" \
+            --arg source_repo "$SOURCE_REPO" \
+            --arg sha "$SHA" \
+            --arg ref_name "$REF_NAME" \
+            --arg actor "$ACTOR" \
+            --argjson images "${IMAGES:-[]}" \
+            '{event_type: $event_type, client_payload: {source_repo: $source_repo, sha: $sha, ref_name: $ref_name, actor: $actor, images: $images}}' \
+            | gh api repos/${{ github.repository }}/dispatches --input - -X POST
