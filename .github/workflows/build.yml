@@ -41,7 +41,7 @@ jobs:
       - name: Parse image list from payload
         id: set
         run: |
-          IMAGES=$(echo "$RAW" | jq 'if type == "array" then . else [] end')
+          IMAGES=$(echo "$RAW" | jq -c 'if type == "array" then . else [] end')
           # 空数组 → 由源仓库的 ci-build.sh 自行决定（传空 IMAGE 变量即可）
           if [ "$IMAGES" = '[]' ] || [ -z "$IMAGES" ]; then
             IMAGES='[""]'
