@@ -3,9 +3,33 @@ name: CI (Go)
 on:
   repository_dispatch:
     types: [ci-go]
+  workflow_dispatch:
+    inputs:
+      source_repo:
+        description: 'Source repo (owner/repo)'
+        required: true
+        default: 'zoneasetech/ttpos-server-go'
+      sha:
+        description: 'Commit SHA or branch to checkout'
+        required: true
+        default: 'main'
+      head_ref:
+        description: 'Head branch name (for image tag)'
+        required: true
+        default: 'main'
+      base_ref:
+        description: 'Base branch (for merge-base comparison)'
+        required: true
+        default: 'main'
+      pr_number:
+        description: 'PR number (optional, for status reporting)'
+        required: false
+      ref_name:
+        description: 'Ref name (optional, defaults to head_ref)'
+        required: false
 
 concurrency:
-  group: ci-${{ github.event.client_payload.source_repo }}-${{ github.event.client_payload.pr_number }}
+  group: ci-${{ github.event.client_payload.source_repo || github.event.inputs.source_repo }}-${{ github.event.client_payload.pr_number || github.event.inputs.pr_number }}
   cancel-in-progress: true
 
 jobs:
