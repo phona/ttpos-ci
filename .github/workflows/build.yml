@@ -96,4 +96,5 @@ jobs:
           CACHE: "1"
           REF_NAME: ${{ github.event.client_payload.ref_name || github.event.inputs.ref_name }}
           SHA: ${{ github.event.client_payload.sha || github.event.inputs.sha }}
-        run: make ci-build IMAGE="$IMAGE" CACHE="$CACHE" REF_NAME="$REF_NAME" SHA="$SHA"
+          VERSION: ${{ github.event.client_payload.version || '' }}
+        run: make ci-build IMAGE="$IMAGE" CACHE="$CACHE" REF_NAME="$REF_NAME" SHA="$SHA" VERSION="$VERSION"

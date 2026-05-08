@@ -394,12 +394,17 @@ jobs:
           ACTOR: ${{ github.event.client_payload.actor }}
           IMAGES: ${{ toJSON(github.event.client_payload.images) }}
         run: |
+          SHORT_SHA="${SHA:0:7}"
+          SAFE_REF="${REF_NAME//\//-}"
+          SAFE_REF="${SAFE_REF//:/-}"
+          VERSION="${SAFE_REF}-${SHORT_SHA}"
           jq -n \
             --arg event_type "build" \
             --arg source_repo "$SOURCE_REPO" \
             --arg sha "$SHA" \
             --arg ref_name "$REF_NAME" \
             --arg actor "$ACTOR" \
+            --arg version "$VERSION" \
             --argjson images "${IMAGES:-[]}" \
-            '{event_type: $event_type, client_payload: {source_repo: $source_repo, sha: $sha, ref_name: $ref_name, actor: $actor, images: $images}}' \
+            '{event_type: $event_type, client_payload: {source_repo: $source_repo, sha: $sha, ref_name: $ref_name, actor: $actor, version: $version, images: $images}}' \
             | gh api repos/${{ github.repository }}/dispatches --input - -X POST
