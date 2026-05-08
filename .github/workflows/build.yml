@@ -18,7 +18,7 @@ on:
         required: true
         default: 'main'
       version:
-        description: 'Final image tag (empty = source repo fallback)'
+        description: 'Optional image tag override (empty = auto)'
         required: false
         default: ''
       images:

@@ -119,7 +119,7 @@ ci-lint:
 
 - 旧业务仓库没有发送 `version` 时，构建仓库会根据 `ref_name` / `event_name` / checkout 后的 `HEAD` 计算默认 `VERSION`
 - 业务仓库仍可保留 `VERSION` 为空时的 legacy 逻辑，但新版构建仓库会尽量保证传入非空 `VERSION`
-- 在 `ttpos-ci` 手动触发 `build.yml` 时，可以显式填写 `version` 保证最终镜像 tag；不填写则由 `ttpos-ci` 根据 `ref_name` 和 checkout 后的短 SHA 计算
+- 在 `ttpos-ci` 手动触发 `build.yml` 时，`version` 是可选的镜像 tag override；不填写则由 `ttpos-ci` 根据 `ref_name` 和 checkout 后的短 SHA 自动计算
 
 | event_type | 触发条件 | 说明 |
 |------------|----------|------|
