@@ -126,6 +126,8 @@ ci-lint:
 | `ci-go` | `pull_request` | 触发 Go CI 流水线 |
 | `build` | `push tags` / `workflow_dispatch` / CI 成功后触发 | 触发构建发布流水线 |
 
+手动触发 `build.yml` 时，`images` 输入使用 JSON 数组字符串，例如 `["ttpos-server-go"]`。留空数组 `[]` 表示交给业务仓库 `ci-build` 构建全部镜像。
+
 ## Workflows
 
 | 文件 | 说明 |
