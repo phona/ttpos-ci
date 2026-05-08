@@ -69,7 +69,7 @@ ci-env:
 |------|------|------|
 | `BASE_REV` | `git merge-base` (PR 基线与 HEAD 的公共祖先 SHA) | 增量扫描基准，仅 PR 时设置；未设置时业务仓库应全量扫描 |
 | `BUILD_ID` | `github.run_id` | 隔离并发运行的集成测试环境 |
-| `VERSION` | `client_payload.version` / `workflow_dispatch.inputs.version` | 最终镜像 tag，仅 `ci-build` 使用；为空时业务仓库按 legacy 逻辑兜底 |
+| `VERSION` | `client_payload.version` / `workflow_dispatch.inputs.version`，为空时由 `ttpos-ci` 计算 | 最终镜像 tag，仅 `ci-build` 使用 |
 | `REF_NAME` | `client_payload.ref_name` / `workflow_dispatch.inputs.ref_name` | 分支/tag 上下文，仅用于日志或业务仓库本地兜底 |
 | `SHA` | `client_payload.sha` / `workflow_dispatch.inputs.sha` | 构建提交 SHA |
 
@@ -106,20 +106,20 @@ ci-lint:
 
 ### 镜像版本契约
 
-业务仓库负责在 `dispatch.yml` 中计算最终镜像版本号，并通过 `client_payload.version` 传入构建仓库。构建仓库优先把 `VERSION` 原样传给业务仓库的 `make ci-build`，不根据 checkout 后的 git 状态猜测 tag、release 分支或测试前缀。
+构建仓库负责计算默认镜像版本号，并通过 `VERSION` 传给业务仓库的 `make ci-build`。业务仓库也可以在 `client_payload.version` 中显式指定版本；一旦指定，构建仓库会原样使用该值。
 
 版本号规则：
 
-- PR / 分支构建：`<safe-branch-name>-<short-sha>`，其中 `/` 和 `:` 替换为 `-`
+- PR / 分支构建：`<safe-branch-name>-<short-sha>`，其中分支名会按 Docker tag 规则清洗；非法字符替换为 `-`，开头非法字符移除，并保留空间给短 SHA
 - tag 构建：`<tag-name>`
 
 业务仓库的 `ci-build` 应优先使用 `VERSION` 作为镜像 tag。`REF_NAME` 只表示触发来源上下文，不应作为最终版本号来源。
 
 后向兼容：
 
-- 旧业务仓库没有发送 `version` 时，构建仓库仍会调用 `make ci-build`，并传入空 `VERSION`
-- 业务仓库可以在 `VERSION` 为空时保留原有 tag/release/test 前缀判断
-- 在 `ttpos-ci` 手动触发 `build.yml` 时，可以显式填写 `version` 保证最终镜像 tag；不填写则交给业务仓库 legacy 逻辑兜底
+- 旧业务仓库没有发送 `version` 时，构建仓库会根据 `ref_name` / `event_name` / checkout 后的 `HEAD` 计算默认 `VERSION`
+- 业务仓库仍可保留 `VERSION` 为空时的 legacy 逻辑，但新版构建仓库会尽量保证传入非空 `VERSION`
+- 在 `ttpos-ci` 手动触发 `build.yml` 时，可以显式填写 `version` 保证最终镜像 tag；不填写则由 `ttpos-ci` 根据 `ref_name` 和 checkout 后的短 SHA 计算
 
 | event_type | 触发条件 | 说明 |
 |------------|----------|------|

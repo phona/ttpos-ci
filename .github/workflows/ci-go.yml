@@ -394,9 +394,15 @@ jobs:
           ACTOR: ${{ github.event.client_payload.actor }}
           IMAGES: ${{ toJSON(github.event.client_payload.images) }}
         run: |
+          sanitize_ref() {
+            local ref="$1"
+            ref="$(printf '%s' "$ref" | sed -E 's/[^A-Za-z0-9_.-]+/-/g; s/^[^A-Za-z0-9_]+//; s/-+/-/g')"
+            ref="${ref:0:120}"
+            printf '%s' "${ref:-ref}"
+          }
+
           SHORT_SHA="${SHA:0:7}"
-          SAFE_REF="${REF_NAME//\//-}"
-          SAFE_REF="${SAFE_REF//:/-}"
+          SAFE_REF="$(sanitize_ref "$REF_NAME")"
           VERSION="${SAFE_REF}-${SHORT_SHA}"
           jq -n \
             --arg event_type "build" \

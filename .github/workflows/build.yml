@@ -100,5 +100,23 @@ jobs:
           CACHE: "1"
           REF_NAME: ${{ github.event.client_payload.ref_name || github.event.inputs.ref_name }}
           SHA: ${{ github.event.client_payload.sha || github.event.inputs.sha }}
+          EVENT_NAME: ${{ github.event.client_payload.event_name || github.event_name }}
           VERSION: ${{ github.event.client_payload.version || github.event.inputs.version || '' }}
-        run: make ci-build IMAGE="$IMAGE" CACHE="$CACHE" REF_NAME="$REF_NAME" SHA="$SHA" VERSION="$VERSION"
+        run: |
+          sanitize_ref() {
+            local ref="$1"
+            ref="$(printf '%s' "$ref" | sed -E 's/[^A-Za-z0-9_.-]+/-/g; s/^[^A-Za-z0-9_]+//; s/-+/-/g')"
+            ref="${ref:0:120}"
+            printf '%s' "${ref:-ref}"
+          }
+
+          if [ -z "$VERSION" ]; then
+            if [ "$EVENT_NAME" = "push" ]; then
+              VERSION="$REF_NAME"
+            else
+              SHORT_SHA="$(git rev-parse --short HEAD)"
+              VERSION="$(sanitize_ref "$REF_NAME")-${SHORT_SHA}"
+            fi
+          fi
+
+          make ci-build IMAGE="$IMAGE" CACHE="$CACHE" REF_NAME="$REF_NAME" SHA="$SHA" VERSION="$VERSION"
