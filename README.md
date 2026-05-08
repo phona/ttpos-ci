@@ -32,7 +32,7 @@ TTPOS 统一构建仓库。接收业务仓库的 dispatch 事件，执行 CI/CD 
 | `ci-lint` | 代码检查 | `BASE_REV` — merge-base SHA，增量扫描基准；未设置则全量 |
 | `ci-unit-test` | 单元测试，覆盖率输出到 `coverage/` | - |
 | `ci-integration-test` | 集成测试，覆盖率输出到 `coverage/` | `BUILD_ID` — 隔离并发运行 |
-| `ci-build` | 构建产物 | `REF_NAME` — 版本标识 |
+| `ci-build` | 构建产物 | `VERSION` — 最终镜像 tag；`REF_NAME` — 分支/tag 上下文；`SHA` — 构建提交 |
 
 ### ci-env 输出规范
 
@@ -69,6 +69,9 @@ ci-env:
 |------|------|------|
 | `BASE_REV` | `git merge-base` (PR 基线与 HEAD 的公共祖先 SHA) | 增量扫描基准，仅 PR 时设置；未设置时业务仓库应全量扫描 |
 | `BUILD_ID` | `github.run_id` | 隔离并发运行的集成测试环境 |
+| `VERSION` | `client_payload.version` / `workflow_dispatch.inputs.version`，为空时由 `ttpos-ci` 计算 | 最终镜像 tag，传给 `ci-build` 时必须非空 |
+| `REF_NAME` | `client_payload.ref_name` / `workflow_dispatch.inputs.ref_name` | 分支/tag 上下文，仅用于日志或业务仓库本地兜底 |
+| `SHA` | `client_payload.sha` / `workflow_dispatch.inputs.sha` | 构建提交 SHA |
 
 业务仓库的 make target 应通过 `$BASE_REV` 环境变量读取，不应假设 git 远程分支可用：
 
@@ -92,22 +95,45 @@ ci-lint:
   "pr_number": "PR 编号（非 PR 时为空）",
   "base_ref": "目标分支名",
   "head_ref": "源分支名",
-  "ref": "git ref",
   "ref_name": "分支/tag 名",
   "event_name": "触发事件类型",
-  "source_repo": "owner/repo"
+  "event_action": "触发动作（可选）",
+  "source_repo": "owner/repo",
+  "version": "最终镜像 tag",
+  "images": ["需要构建的镜像名"]
 }
 ```
+
+### 镜像版本契约
+
+构建仓库负责计算默认镜像版本号，并通过 `VERSION` 传给业务仓库的 `make ci-build`。业务仓库也可以在 `client_payload.version` 中显式指定版本；一旦指定，构建仓库会原样使用该值。
+
+版本号规则：
+
+- PR / 分支构建：`<safe-branch-name>-<short-sha>`，其中分支名会按 Docker tag 规则清洗；非法字符替换为 `-`，开头非法字符移除，并保留空间给短 SHA
+- tag 构建：`<tag-name>`
+
+业务仓库的 `ci-build` 必须使用非空 `VERSION` 作为镜像 tag。`REF_NAME` 只表示触发来源上下文，不应作为最终版本号来源或兜底来源。
+
+后向兼容：
+
+- 旧业务仓库没有发送 `version` 时，构建仓库会根据 `ref_name` / `event_name` / checkout 后的 `HEAD` 计算默认 `VERSION`
+- 新版构建仓库传给业务仓库 `ci-build` 的 `VERSION` 必须非空，业务仓库不需要再保留版本兜底逻辑
+- 在 `ttpos-ci` 手动触发 `build.yml` 时，`version` 是可选的镜像 tag override；不填写则由 `ttpos-ci` 根据 `ref_name` 和 checkout 后的短 SHA 自动计算
 
 | event_type | 触发条件 | 说明 |
 |------------|----------|------|
 | `ci-go` | `pull_request` | 触发 Go CI 流水线 |
-| `build` | `push tags` / `workflow_dispatch` | 触发构建发布流水线 |
+| `build` | `push tags` / `workflow_dispatch` / CI 成功后触发 | 触发构建发布流水线 |
+
+手动触发 `build.yml` 时，`images` 输入使用 JSON 数组字符串，例如 `["ttpos-server-go"]`。留空数组 `[]` 表示交给业务仓库 `ci-build` 构建全部镜像。
+
+手动验证 tag 打包时，将 `ref_type` 设置为 `tag`，`ref_name` 填 tag 名，`version` 留空即可验证自动版本为原始 tag 名。
 
 ## Workflows
 
 | 文件 | 说明 |
 |------|------|
-| `ci-go.yml` | Go 业务仓库 CI（lint → test → sonarqube） |
+| `ci-go.yml` | Go 业务仓库 CI（lint → test → sonarqube → build dispatch） |
 | `ci-flutter.yml` | Flutter 前端仓库 CI |
 | `build.yml` | Docker 镜像构建与发布 |

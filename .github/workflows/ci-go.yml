@@ -394,12 +394,23 @@ jobs:
           ACTOR: ${{ github.event.client_payload.actor }}
           IMAGES: ${{ toJSON(github.event.client_payload.images) }}
         run: |
+          sanitize_ref() {
+            local ref="$1"
+            ref="$(printf '%s' "$ref" | sed -E 's/[^A-Za-z0-9_.-]+/-/g; s/^[^A-Za-z0-9_]+//; s/-+/-/g')"
+            ref="${ref:0:120}"
+            printf '%s' "${ref:-ref}"
+          }
+
+          SHORT_SHA="${SHA:0:7}"
+          SAFE_REF="$(sanitize_ref "$REF_NAME")"
+          VERSION="${SAFE_REF}-${SHORT_SHA}"
           jq -n \
             --arg event_type "build" \
             --arg source_repo "$SOURCE_REPO" \
             --arg sha "$SHA" \
             --arg ref_name "$REF_NAME" \
             --arg actor "$ACTOR" \
+            --arg version "$VERSION" \
             --argjson images "${IMAGES:-[]}" \
-            '{event_type: $event_type, client_payload: {source_repo: $source_repo, sha: $sha, ref_name: $ref_name, actor: $actor, images: $images}}' \
+            '{event_type: $event_type, client_payload: {source_repo: $source_repo, sha: $sha, ref_name: $ref_name, actor: $actor, version: $version, images: $images}}' \
             | gh api repos/${{ github.repository }}/dispatches --input - -X POST
