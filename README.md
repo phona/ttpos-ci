@@ -32,7 +32,7 @@ TTPOS 统一构建仓库。接收业务仓库的 dispatch 事件，执行 CI/CD 
 | `ci-lint` | 代码检查 | `BASE_REV` — merge-base SHA，增量扫描基准；未设置则全量 |
 | `ci-unit-test` | 单元测试，覆盖率输出到 `coverage/` | - |
 | `ci-integration-test` | 集成测试，覆盖率输出到 `coverage/` | `BUILD_ID` — 隔离并发运行 |
-| `ci-build` | 构建产物 | `REF_NAME` — 版本标识 |
+| `ci-build` | 构建产物 | `VERSION` — 最终镜像 tag；`REF_NAME` — 分支/tag 上下文；`SHA` — 构建提交 |
 
 ### ci-env 输出规范
 
@@ -69,6 +69,9 @@ ci-env:
 |------|------|------|
 | `BASE_REV` | `git merge-base` (PR 基线与 HEAD 的公共祖先 SHA) | 增量扫描基准，仅 PR 时设置；未设置时业务仓库应全量扫描 |
 | `BUILD_ID` | `github.run_id` | 隔离并发运行的集成测试环境 |
+| `VERSION` | `client_payload.version` / `workflow_dispatch.inputs.version` | 最终镜像 tag，仅 `ci-build` 使用 |
+| `REF_NAME` | `client_payload.ref_name` / `workflow_dispatch.inputs.ref_name` | 分支/tag 上下文，仅用于日志或业务仓库本地兜底 |
+| `SHA` | `client_payload.sha` / `workflow_dispatch.inputs.sha` | 构建提交 SHA |
 
 业务仓库的 make target 应通过 `$BASE_REV` 环境变量读取，不应假设 git 远程分支可用：
 
@@ -92,22 +95,35 @@ ci-lint:
   "pr_number": "PR 编号（非 PR 时为空）",
   "base_ref": "目标分支名",
   "head_ref": "源分支名",
-  "ref": "git ref",
   "ref_name": "分支/tag 名",
   "event_name": "触发事件类型",
-  "source_repo": "owner/repo"
+  "event_action": "触发动作（可选）",
+  "source_repo": "owner/repo",
+  "version": "最终镜像 tag",
+  "images": ["需要构建的镜像名"]
 }
 ```
+
+### 镜像版本契约
+
+业务仓库负责在 `dispatch.yml` 中计算最终镜像版本号，并通过 `client_payload.version` 传入构建仓库。构建仓库不根据 checkout 后的 git 状态猜测 tag、release 分支或测试前缀，只负责把 `VERSION` 原样传给业务仓库的 `make ci-build`。
+
+版本号规则：
+
+- PR / 分支构建：`<safe-branch-name>-<short-sha>`，其中 `/` 和 `:` 替换为 `-`
+- tag 构建：`<tag-name>`
+
+业务仓库的 `ci-build` 应优先使用 `VERSION` 作为镜像 tag。`REF_NAME` 只表示触发来源上下文，不应作为最终版本号来源。
 
 | event_type | 触发条件 | 说明 |
 |------------|----------|------|
 | `ci-go` | `pull_request` | 触发 Go CI 流水线 |
-| `build` | `push tags` / `workflow_dispatch` | 触发构建发布流水线 |
+| `build` | `push tags` / `workflow_dispatch` / CI 成功后触发 | 触发构建发布流水线 |
 
 ## Workflows
 
 | 文件 | 说明 |
 |------|------|
-| `ci-go.yml` | Go 业务仓库 CI（lint → test → sonarqube） |
+| `ci-go.yml` | Go 业务仓库 CI（lint → test → sonarqube → build dispatch） |
 | `ci-flutter.yml` | Flutter 前端仓库 CI |
 | `build.yml` | Docker 镜像构建与发布 |

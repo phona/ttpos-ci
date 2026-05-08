@@ -17,6 +17,10 @@ on:
         description: 'Ref name (branch or tag)'
         required: true
         default: 'main'
+      version:
+        description: 'Final image tag (empty = source repo fallback)'
+        required: false
+        default: ''
       images:
         description: 'Images to build (JSON array, empty = all)'
         required: false
@@ -96,5 +100,5 @@ jobs:
           CACHE: "1"
           REF_NAME: ${{ github.event.client_payload.ref_name || github.event.inputs.ref_name }}
           SHA: ${{ github.event.client_payload.sha || github.event.inputs.sha }}
-          VERSION: ${{ github.event.client_payload.version || '' }}
+          VERSION: ${{ github.event.client_payload.version || github.event.inputs.version || '' }}
         run: make ci-build IMAGE="$IMAGE" CACHE="$CACHE" REF_NAME="$REF_NAME" SHA="$SHA" VERSION="$VERSION"
