@@ -17,6 +17,10 @@ on:
         description: 'Ref name (branch or tag)'
         required: true
         default: 'main'
+      ref_type:
+        description: 'Ref type for auto version (branch or tag)'
+        required: false
+        default: 'branch'
       version:
         description: 'Optional image tag override (empty = auto)'
         required: false
@@ -101,6 +105,7 @@ jobs:
           REF_NAME: ${{ github.event.client_payload.ref_name || github.event.inputs.ref_name }}
           SHA: ${{ github.event.client_payload.sha || github.event.inputs.sha }}
           EVENT_NAME: ${{ github.event.client_payload.event_name || github.event_name }}
+          REF_TYPE: ${{ github.event.client_payload.ref_type || github.event.inputs.ref_type || '' }}
           VERSION: ${{ github.event.client_payload.version || github.event.inputs.version || '' }}
         run: |
           sanitize_ref() {
@@ -111,7 +116,7 @@ jobs:
           }
 
           if [ -z "$VERSION" ]; then
-            if [ "$EVENT_NAME" = "push" ]; then
+            if [ "$REF_TYPE" = "tag" ] || [ "$EVENT_NAME" = "push" ]; then
               VERSION="$REF_NAME"
             else
               SHORT_SHA="$(git rev-parse --short HEAD)"

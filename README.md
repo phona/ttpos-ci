@@ -128,6 +128,8 @@ ci-lint:
 
 手动触发 `build.yml` 时，`images` 输入使用 JSON 数组字符串，例如 `["ttpos-server-go"]`。留空数组 `[]` 表示交给业务仓库 `ci-build` 构建全部镜像。
 
+手动验证 tag 打包时，将 `ref_type` 设置为 `tag`，`ref_name` 填 tag 名，`version` 留空即可验证自动版本为原始 tag 名。
+
 ## Workflows
 
 | 文件 | 说明 |
